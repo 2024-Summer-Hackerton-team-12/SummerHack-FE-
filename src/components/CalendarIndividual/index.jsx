@@ -15,10 +15,8 @@ const StyledH1 = styled(Styles.H1)`
   margin-bottom: 0px;
 `;
 
-
 const NewCaption2 = styled(Styles.Caption2)`
   color: #c4c4c4;
-
 `;
 
 const CalendarWrapper = styled.div`
@@ -34,7 +32,18 @@ const CheckIcon = styled.img`
   height: 24px;
 `;
 
-const CalendarIndividual = ({ dayOfWeek, date }) => {
+const StyledUl = styled.ul`
+  list-style-type: none;
+  padding-left: 0;
+  margin-top: 0px;
+`;
+
+const StyledLi = styled.li`
+  margin-bottom: 8px;
+  font-size: 14px;
+`;
+
+const CalendarIndividual = ({ dayOfWeek, date, plans }) => {
   const formattedDate = `${date.getMonth() + 1}월 ${date.getDate()}일`;
 
   return (
@@ -45,12 +54,13 @@ const CalendarIndividual = ({ dayOfWeek, date }) => {
           <NewCaption2>{formattedDate}</NewCaption2>
         </TextFlex>
         <TextFlex>
-          <ul>
-            <li>~하기</li>
-            <li>~하기</li>
-            <li>~하기</li>
-            <li>~하기</li>
-          </ul>
+          <StyledUl>
+            {['description', 'description2', 'description3', 'description4'].map((key, index) => (
+              <StyledLi key={index}>
+                {plans && plans[key] ? `${plans[key].time} ${plans[key].text}` : '공부하기'}
+              </StyledLi>
+            ))}
+          </StyledUl>
         </TextFlex>
       </CI.CalendarContainer>
       <CheckIcon

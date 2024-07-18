@@ -6,4 +6,5 @@ export const CalendarWholeContainer = styled.div`
   width: 764px;
   align-items: center;
   height: 270px;
+
 `;

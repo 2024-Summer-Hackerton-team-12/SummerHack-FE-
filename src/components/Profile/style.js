@@ -8,6 +8,8 @@ export const ProfileContainer = styled.div`
   gap: 16px;
   border-radius: 12px;
   background-color: ${({ theme }) => theme.colors.neutral[99]};
+  margin-left: 188px;
+  margin-top: 70px;
 `;
 
 export const ProfileImg = styled.div`

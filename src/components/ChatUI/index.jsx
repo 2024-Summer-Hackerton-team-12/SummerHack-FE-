@@ -1,23 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import styled from 'styled-components';
-import * as S from './style.js';  // 스타일 파일 import
-import * as Styles from "../../style.js";  // 전역 스타일 import
+import * as S from './style.js';
+import * as Styles from "../../style.js";
 
 const ChatUI = () => {
   const [messages, setMessages] = useState([]);
   const [userInput, setUserInput] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [generatedPlan, setGeneratedPlan] = useState(null);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const chatContainerRef = useRef(null);
 
-//API키 있어야하는 자리
+
 
   const presetQuestions = [
     "지난주 평균 숙면시간은 어느정도 인가요?",
     "지난주 평균 공부 시간은 무엇인가요?",
-    "이번주 공부해야할 과목을 알려주세요",
-    "기타 참고 사항을 알려주세요"
+    "이번주 공부해야할 과목들을 알려주세요(쉼표로 구분)",
+    "기타 참고 사항을 알려주세요(상세하게 입력할수록 좋아요)"
   ];
 
   useEffect(() => {
@@ -63,40 +65,49 @@ const ChatUI = () => {
     setCurrentQuestion(prev => prev + 1);
   };
 
-  const formatPlan = (plan) => {
+  const formatPlanForBackend = (plan) => {
     const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
     const formattedPlan = {};
 
-    days.forEach(day => {
-      const dayRegex = new RegExp(`${day}:([\\s\\S]*?)(?=${days.map(d => `${d}:`).join('|')}|$)`, 'i');
-      const match = plan.match(dayRegex);
-      if (match) {
-        formattedPlan[day] = match[1].trim().split(/\d+\./).filter(item => item.trim()).map(item => item.trim());
+    days.forEach((day, dayIndex) => {
+      formattedPlan[day] = {};
+      for (let i = 1; i <= 4; i++) {
+        const descKey = `description${i > 1 ? i : ''}`;
+        formattedPlan[day][descKey] = {
+          id: dayIndex * 4 + i,
+          time: null,
+          text: null
+        };
       }
     });
 
-    return formattedPlan;
-  };
+    const planLines = plan.split('\n');
+    let currentDay = '';
 
-  const renderFormattedPlan = (plan) => {
-    const formattedPlan = formatPlan(plan);
-    
-    return (
-      <PlanContainer>
-        {Object.entries(formattedPlan).map(([day, activities]) => (
-          <DayPlan key={day}>
-            <DayTitle>{day}</DayTitle>
-            <ActivitiesList>
-              {activities.map((activity, index) => (
-                <ActivityItem key={index}>
-                  {index + 1}. {activity}
-                </ActivityItem>
-              ))}
-            </ActivitiesList>
-          </DayPlan>
-        ))}
-      </PlanContainer>
-    );
+    planLines.forEach(line => {
+      const dayMatch = line.match(/^([A-Z]+):/);
+      if (dayMatch) {
+        currentDay = dayMatch[1];
+      } else if (currentDay && line.trim()) {
+        const timeMatch = line.match(/^(\d{2}:\d{2})/);
+        if (timeMatch) {
+          const time = timeMatch[1];
+          const text = line.substring(time.length).trim();
+          const descKeys = Object.keys(formattedPlan[currentDay]);
+          const emptyDescKey = descKeys.find(key => formattedPlan[currentDay][key].text === null);
+          
+          if (emptyDescKey) {
+            formattedPlan[currentDay][emptyDescKey] = {
+              id: formattedPlan[currentDay][emptyDescKey].id,
+              time: time,
+              text: text
+            };
+          }
+        }
+      }
+    });
+
+    return { plans: formattedPlan };
   };
 
   const generatePlan = async () => {
@@ -110,12 +121,12 @@ const ChatUI = () => {
       
       각 요일별로 4개의 학습 항목을 시간과 함께 제안해주세요. 예를 들어:
       MONDAY:
-      1. 09:00 수학 3페이지 풀기
-      2. 11:00 영어 단어 50개 암기
-      3. 14:00 과학 실험 보고서 작성
-      4. 16:00 역사 요약 정리
+      09:00 수학 3페이지 풀기
+      11:00 영어 단어 50개 암기
+      14:00 과학 실험 보고서 작성
+      16:00 역사 요약 정리
       
-      이런 식으로 월요일부터 일요일까지 작성해주세요. 띄어쓰기를 잘 한뒤 값을 내보내주세요`;
+      이런 식으로 월요일부터 일요일까지 작성해주세요. 띄어쓰기를 잘 한뒤 값을 내보내주세요. 시간 배분을 비슷하게 하지말고 좀 다르게 해줘`;
 
       setMessages(prev => [...prev, { text: "계획을 생성 중입니다...", isUser: false, isLoading: true }]);
       
@@ -124,11 +135,47 @@ const ChatUI = () => {
       setMessages(prev => prev.filter(msg => !msg.isLoading));
       setMessages(prev => [...prev, { text: "일주일 공부 계획이 생성되었습니다:", isUser: false }]);
       setMessages(prev => [...prev, { text: gptResponse, isUser: false, isPlan: true }]);
+
+      const formattedPlan = formatPlanForBackend(gptResponse);
+      setGeneratedPlan(formattedPlan);
+      setShowConfirmation(true);
     } catch (error) {
       setMessages(prev => [...prev, { text: `오류 발생: ${error.message}`, isUser: false }]);
     } finally {
       setIsGeneratingPlan(false);
     }
+  };
+
+  const handleConfirmPlan = async () => {
+    try {
+      await axios.post('http://192.168.0.31:8080/api/plan', generatedPlan);
+      setMessages(prev => [...prev, { text: "계획이 성공적으로 저장되었습니다.", isUser: false }]);
+    } catch (error) {
+      setMessages(prev => [...prev, { text: "계획 저장 중 오류가 발생했습니다.", isUser: false }]);
+    } finally {
+      setShowConfirmation(false);
+    }
+  };
+
+  const renderFormattedPlan = (plan) => {
+    const formattedPlan = formatPlanForBackend(plan);
+    
+    return (
+      <PlanContainer>
+        {Object.entries(formattedPlan.plans).map(([day, activities]) => (
+          <DayPlan key={day}>
+            <DayTitle>{day}</DayTitle>
+            <ActivitiesList>
+              {Object.values(activities).map((activity, index) => (
+                <ActivityItem key={index}>
+                  {activity.time ? `${activity.time} ${activity.text}` : '-'}
+                </ActivityItem>
+              ))}
+            </ActivitiesList>
+          </DayPlan>
+        ))}
+      </PlanContainer>
+    );
   };
 
   return (
@@ -172,11 +219,17 @@ const ChatUI = () => {
           </SubmitButton>
         </form>
       </S.FlexRow>
+
+      {showConfirmation && (
+        <ConfirmationBox>
+          <p>생성된 계획을 캘린더에 반영하시겠습니까?</p>
+          <ConfirmButton onClick={handleConfirmPlan}>확인</ConfirmButton>
+          <CancelButton onClick={() => setShowConfirmation(false)}>취소</CancelButton>
+        </ConfirmationBox>
+      )}
     </S.ChatContainer>
   );
 };
-
-
 
 const TypingIndicator = styled.div`
   &:after {
@@ -240,6 +293,28 @@ const ActivitiesList = styled.ul`
 const ActivityItem = styled.li`
   margin-bottom: 8px;
   line-height: 1.4;
+`;
+
+const ConfirmationBox = styled.div`
+  margin-top: 20px;
+  padding: 15px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  text-align: center;
+`;
+
+const ConfirmButton = styled.button`
+  background-color: #4dabf7;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  margin-right: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+`;
+
+const CancelButton = styled(ConfirmButton)`
+  background-color: #868e96;
 `;
 
 export default ChatUI;
